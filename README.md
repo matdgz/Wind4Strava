@@ -7,7 +7,9 @@ Wind4Strava is a WebExtension that overlays wind direction and intensity on top 
 - Wind arrows over the map while planning or editing routes on Strava.
 - Forecast offset control from `Now` to `+24h` (step `2h`).
 - Density control (`1..10`) without extra fetches for the same area/time.
-- Strava-integrated icon-only Wind toggle near map utility controls.
+- Strava-integrated icon-only map controls near Heatmaps/Segments:
+  - Wind toggle
+  - Refresh area
 - Default state is `OFF` to avoid automatic API usage.
 - 3D adaptation support with live redraw on map move/rotate/pitch.
 - Hash fallback mode when map object cannot be detected, with warning state in 3D.
@@ -20,6 +22,14 @@ Wind4Strava is a WebExtension that overlays wind direction and intensity on top 
 - No API key required.
 
 Note: Open-Meteo can rate-limit high traffic. Wind4Strava includes retry, cache fallback, and explicit daily-limit status messaging.
+
+## Area Refresh Model
+
+- Turning Wind ON performs one initial area load.
+- Panning/zooming/rotating does not auto-fetch new area data.
+- Arrows keep redrawing from last loaded vectors while moving.
+- Click the map Refresh button to fetch wind for the current visible area.
+- Refresh uses smart cache and avoids new calls when same-area data is still fresh.
 
 ## Load From Source
 

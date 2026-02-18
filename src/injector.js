@@ -227,7 +227,7 @@
     requestUiStateFromPage();
   }
 
-  function tryInjectForCurrentUrl() {
+  async function tryInjectForCurrentUrl() {
     const url = location.href;
     if (url === lastUrl) {
       return;
@@ -236,6 +236,15 @@
 
     if (!isRouteUrl(url)) {
       return;
+    }
+
+    // Product decision: always start OFF when entering Strava map/route pages.
+    if (cachedSettings.enabled) {
+      cachedSettings = normalizeSettings({
+        ...cachedSettings,
+        enabled: false
+      });
+      await storageSet(SETTINGS_KEY, cachedSettings);
     }
 
     injectPageScript();
@@ -342,9 +351,11 @@
 
   void (async () => {
     await loadSettings();
-    tryInjectForCurrentUrl();
+    await tryInjectForCurrentUrl();
     pushStateToPage();
   })();
 
-  window.setInterval(tryInjectForCurrentUrl, 900);
+  window.setInterval(() => {
+    void tryInjectForCurrentUrl();
+  }, 900);
 })();

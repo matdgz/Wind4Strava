@@ -27,12 +27,17 @@
     maxFetchRetries: 4,
     retryBaseDelayMs: 1200,
     retryMaxDelayMs: 8000,
+    manualRefreshFreshMs: 10 * 60 * 1000,
     rateLimitDensityFactor: 0.6,
     rateLimitCapDurationMs: 2 * 60 * 1000,
     staleCacheMaxAgeMs: 2 * 60 * 60 * 1000,
     maxCacheEntries: 24,
     objectScanMaxNodes: 700,
-    objectScanMaxProps: 35
+    objectScanMaxProps: 35,
+    stravaButtonSize: 40,
+    stravaButtonGap: 0,
+    overlayZIndex: 2,
+    controlsZIndex: 30
   };
 
   const MESSAGE_SOURCE_EXT = "w4s-ext";
@@ -74,7 +79,12 @@
     lastDerivedForecastTimeMs: Number.NaN,
     lastDerivedMode: null,
     viewRedrawFrameId: 0,
+    isAreaDirty: false,
+    lastFetchedCacheKey: "",
+    lastManualRefreshAtMs: 0,
     stravaToggleButton: null,
+    stravaRefreshButton: null,
+    stravaControlGroup: null,
     stravaToggleSlot: null,
     lastButtonAnchorSignature: "",
     buttonObserver: null
@@ -172,7 +182,7 @@
       .w4s-overlay-root {
         position: absolute;
         inset: 0;
-        z-index: 2147481000;
+        z-index: ${CONFIG.overlayZIndex};
         pointer-events: none;
       }
       .w4s-overlay-root.w4s-overlay-root--fixed {
@@ -188,13 +198,13 @@
       .w4s-strava-btn {
         pointer-events: auto;
         position: relative;
-        height: 40px;
-        width: 40px;
-        min-width: 40px;
+        height: ${CONFIG.stravaButtonSize}px;
+        width: ${CONFIG.stravaButtonSize}px;
+        min-width: ${CONFIG.stravaButtonSize}px;
         padding: 0;
-        border: 1px solid #d5d8de;
-        border-radius: 6px;
-        background: #ffffff;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
         color: #242428;
         cursor: pointer;
         font-family: "Boathouse", "Inter", "Avenir Next", "Segoe UI", sans-serif;
@@ -206,26 +216,46 @@
         align-items: center;
         transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
       }
+      .w4s-btn-group {
+        display: inline-flex;
+        align-items: stretch;
+        gap: ${CONFIG.stravaButtonGap}px;
+        pointer-events: auto;
+        background: #ffffff;
+        border: 1px solid #d5d8de;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03);
+      }
+      .w4s-btn-group:hover {
+        border-color: #c3c7cf;
+      }
+      .w4s-btn-group .w4s-strava-btn + .w4s-strava-btn {
+        border-left: 1px solid #e2e6ed;
+      }
       .w4s-slot {
         display: inline-flex;
         position: fixed;
         top: -9999px;
         left: -9999px;
-        width: 40px;
-        height: 40px;
+        width: ${(CONFIG.stravaButtonSize * 2) + CONFIG.stravaButtonGap}px;
+        height: ${CONFIG.stravaButtonSize}px;
         align-items: center;
         justify-content: center;
         pointer-events: none;
-        z-index: 2147481200;
+        z-index: ${CONFIG.controlsZIndex};
         flex-shrink: 0;
       }
       .w4s-strava-btn:hover {
-        border-color: #c3c7cf;
-        box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+        background: #f8fafc;
       }
       .w4s-strava-btn:focus-visible {
         outline: none;
-        box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px rgba(252, 76, 2, 0.5);
+        box-shadow: inset 0 0 0 2px rgba(252, 76, 2, 0.45);
+      }
+      .w4s-strava-btn:disabled {
+        cursor: not-allowed;
+        opacity: 0.7;
       }
       .w4s-strava-btn .w4s-btn-icon {
         display: inline-flex;
@@ -235,25 +265,32 @@
       }
       .w4s-strava-btn.w4s-btn--off {
         color: #5f6773;
-        border-color: #d5d8de;
-        background: #fff;
+        background: transparent;
       }
       .w4s-strava-btn.w4s-btn--on {
-        border-color: rgba(252, 76, 2, 0.42);
         background: #fff7f3;
         color: #fc4c02;
       }
       .w4s-strava-btn.w4s-btn--error {
-        border-color: rgba(220, 38, 38, 0.45);
         background: #fff5f5;
         color: #991b1b;
       }
       .w4s-strava-btn.w4s-btn--loading {
-        border-color: rgba(252, 76, 2, 0.45);
         color: #fc4c02;
-        background: #fff;
+        background: #fff8f3;
       }
       .w4s-strava-btn.w4s-btn--loading .w4s-btn-icon {
+        animation: w4s-spin 0.85s linear infinite;
+      }
+      .w4s-refresh-btn {
+        color: #5f6773;
+        background: transparent;
+      }
+      .w4s-refresh-btn.w4s-refresh-btn--dirty {
+        color: #fc4c02;
+        background: #fff7f3;
+      }
+      .w4s-refresh-btn.w4s-refresh-btn--loading .w4s-btn-icon {
         animation: w4s-spin 0.85s linear infinite;
       }
       @keyframes w4s-spin {
@@ -521,17 +558,17 @@
       map.on("move", scheduleViewRedraw);
       map.on("rotate", scheduleViewRedraw);
       map.on("pitch", scheduleViewRedraw);
-      map.on("moveend", scheduleRefresh);
-      map.on("zoomend", scheduleRefresh);
-      map.on("dragend", scheduleRefresh);
-      map.on("resize", scheduleRefresh);
+      map.on("moveend", () => handleViewportChanged("map-moveend"));
+      map.on("zoomend", () => handleViewportChanged("map-zoomend"));
+      map.on("dragend", () => handleViewportChanged("map-dragend"));
+      map.on("resize", () => handleViewportChanged("map-resize"));
     } catch (error) {
       debug("Failed to bind map listeners", error);
     }
 
     ensureOverlay();
     mountOverlayToBestContainer();
-    scheduleRefresh(true);
+    refreshViewState("map-ready");
   }
 
   function getMapContainer() {
@@ -728,11 +765,68 @@
 
     button.addEventListener("click", () => {
       const nextEnabled = !state.settings.enabled;
-      applySettings({ enabled: nextEnabled }, "button");
+      applySettings({ enabled: nextEnabled }, "button-toggle");
       emitMessageToExtension("w4s:user-toggle", { enabled: nextEnabled });
     });
 
     return button;
+  }
+
+  function createStravaRefreshButton() {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "w4s-strava-btn w4s-refresh-btn";
+    button.setAttribute("aria-label", "Refresh wind overlay for current map area");
+    button.innerHTML = `
+      <span class="w4s-btn-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 12a8 8 0 1 1-2.34-5.66"></path>
+          <path d="M20 4v6h-6"></path>
+        </svg>
+      </span>
+    `;
+
+    button.addEventListener("click", () => {
+      if (state.fetchController) {
+        return;
+      }
+
+      if (!state.settings.enabled) {
+        applySettings({ enabled: true }, "refresh-button-off", { fetchOnEnable: false });
+        emitMessageToExtension("w4s:user-toggle", { enabled: true });
+        void requestAreaRefresh("refresh-button-off", {
+          manual: true,
+          allowCache: true,
+          allowNetwork: true,
+          immediate: true
+        });
+        return;
+      }
+
+      void requestAreaRefresh("refresh-button", {
+        manual: true,
+        allowCache: true,
+        allowNetwork: true,
+        immediate: true
+      });
+    });
+
+    return button;
+  }
+
+  function createStravaControlGroup() {
+    const group = document.createElement("span");
+    group.className = "w4s-btn-group";
+
+    if (!state.stravaToggleButton) {
+      state.stravaToggleButton = createStravaToggleButton();
+    }
+    if (!state.stravaRefreshButton) {
+      state.stravaRefreshButton = createStravaRefreshButton();
+    }
+
+    group.replaceChildren(state.stravaToggleButton, state.stravaRefreshButton);
+    return group;
   }
 
   function createStravaToggleSlot() {
@@ -845,23 +939,31 @@
   }
 
   function pickFloatingLeft(anchorRow, referenceControl, preferredLeft, topPx) {
-    const candidates = [preferredLeft, preferredLeft + 50, preferredLeft - 50, preferredLeft + 100];
+    const slotWidth = (CONFIG.stravaButtonSize * 2) + CONFIG.stravaButtonGap;
+    const slotHeight = CONFIG.stravaButtonSize;
+    const jump = slotWidth + 10;
+    const candidates = [preferredLeft, preferredLeft + jump, preferredLeft - jump, preferredLeft + (jump * 2)];
     const controls = anchorRow
       ? Array.from(anchorRow.querySelectorAll("button, a[role='button'], [role='button']")).filter(
-          (el) => el instanceof HTMLElement && el !== state.stravaToggleButton && isVisibleToolbarControl(el)
+          (el) =>
+            el instanceof HTMLElement &&
+            el !== state.stravaToggleButton &&
+            el !== state.stravaRefreshButton &&
+            !el.closest(".w4s-slot") &&
+            isVisibleToolbarControl(el)
         )
       : [];
 
     for (const left of candidates) {
-      if (left < 8 || left + 40 > window.innerWidth - 8) {
+      if (left < 8 || left + slotWidth > window.innerWidth - 8) {
         continue;
       }
 
       const slotRect = {
         left,
-        right: left + 40,
+        right: left + slotWidth,
         top: topPx,
-        bottom: topPx + 40
+        bottom: topPx + slotHeight
       };
       let hasOverlap = false;
       for (const control of controls) {
@@ -917,13 +1019,15 @@
       return null;
     }
 
+    const slotWidth = (CONFIG.stravaButtonSize * 2) + CONFIG.stravaButtonGap;
+    const slotHeight = CONFIG.stravaButtonSize;
     const referenceRect = preferred.control.getBoundingClientRect();
-    const preferredTop = Math.round(referenceRect.top + (referenceRect.height - 40) / 2);
-    const topPx = Math.max(8, Math.min(Math.max(window.innerHeight - 48, 8), preferredTop));
+    const preferredTop = Math.round(referenceRect.top + (referenceRect.height - slotHeight) / 2);
+    const topPx = Math.max(8, Math.min(Math.max(window.innerHeight - (slotHeight + 8), 8), preferredTop));
 
     let preferredLeft = Math.round(referenceRect.right + 10);
-    if (preferredLeft + 40 > window.innerWidth - 8) {
-      preferredLeft = Math.round(referenceRect.left - 50);
+    if (preferredLeft + slotWidth > window.innerWidth - 8) {
+      preferredLeft = Math.round(referenceRect.left - (slotWidth + 10));
     }
 
     const leftPx = pickFloatingLeft(anchorRow, preferred.control, preferredLeft, topPx);
@@ -940,27 +1044,48 @@
   }
 
   function updateStravaToggleButton() {
-    if (!state.stravaToggleButton) {
-      return;
+    if (state.stravaToggleButton) {
+      const button = state.stravaToggleButton;
+      button.classList.remove("w4s-btn--off", "w4s-btn--loading", "w4s-btn--on", "w4s-btn--error");
+
+      let visualStateClass = "w4s-btn--off";
+      if (state.settings.enabled) {
+        if (state.statusLevel === "loading") {
+          visualStateClass = "w4s-btn--loading";
+        } else if (state.statusLevel === "error") {
+          visualStateClass = "w4s-btn--error";
+        } else {
+          visualStateClass = "w4s-btn--on";
+        }
+      }
+
+      button.classList.add(visualStateClass);
+      button.setAttribute("aria-pressed", String(state.settings.enabled));
+      button.title = state.statusText || (state.settings.enabled ? "Wind overlay enabled." : "Wind overlay disabled.");
     }
 
-    const button = state.stravaToggleButton;
-    button.classList.remove("w4s-btn--off", "w4s-btn--loading", "w4s-btn--on", "w4s-btn--error");
+    if (state.stravaRefreshButton) {
+      const button = state.stravaRefreshButton;
+      const isLoading = Boolean(state.fetchController);
+      const shouldHighlightDirty = Boolean(state.settings.enabled && (state.isAreaDirty || !state.lastFetchedCacheKey));
+      button.classList.remove("w4s-refresh-btn--dirty", "w4s-refresh-btn--loading");
+      if (isLoading) {
+        button.classList.add("w4s-refresh-btn--loading");
+      } else if (shouldHighlightDirty) {
+        button.classList.add("w4s-refresh-btn--dirty");
+      }
+      button.disabled = isLoading;
 
-    let visualStateClass = "w4s-btn--off";
-    if (state.settings.enabled) {
-      if (state.statusLevel === "loading") {
-        visualStateClass = "w4s-btn--loading";
-      } else if (state.statusLevel === "error") {
-        visualStateClass = "w4s-btn--error";
+      if (!state.settings.enabled) {
+        button.title = "Enable wind and refresh the current map area.";
+      } else if (isLoading) {
+        button.title = "Refreshing wind data...";
+      } else if (state.isAreaDirty) {
+        button.title = "Refresh wind for the current visible map area.";
       } else {
-        visualStateClass = "w4s-btn--on";
+        button.title = "Refresh wind for the current visible map area.";
       }
     }
-
-    button.classList.add(visualStateClass);
-    button.setAttribute("aria-pressed", String(state.settings.enabled));
-    button.title = state.statusText || (state.settings.enabled ? "Wind overlay enabled." : "Wind overlay disabled.");
   }
 
   function ensureStravaToggleButton() {
@@ -980,12 +1105,26 @@
     if (!state.stravaToggleButton || !state.stravaToggleButton.isConnected) {
       state.stravaToggleButton = createStravaToggleButton();
     }
+    if (!state.stravaRefreshButton || !state.stravaRefreshButton.isConnected) {
+      state.stravaRefreshButton = createStravaRefreshButton();
+    }
+    if (!state.stravaControlGroup || !state.stravaControlGroup.isConnected) {
+      state.stravaControlGroup = createStravaControlGroup();
+    }
     if (!state.stravaToggleSlot || !state.stravaToggleSlot.isConnected) {
       state.stravaToggleSlot = createStravaToggleSlot();
     }
 
-    if (state.stravaToggleButton.parentElement !== state.stravaToggleSlot) {
-      state.stravaToggleSlot.replaceChildren(state.stravaToggleButton);
+    if (
+      state.stravaControlGroup.children.length !== 2 ||
+      state.stravaControlGroup.children[0] !== state.stravaToggleButton ||
+      state.stravaControlGroup.children[1] !== state.stravaRefreshButton
+    ) {
+      state.stravaControlGroup.replaceChildren(state.stravaToggleButton, state.stravaRefreshButton);
+    }
+
+    if (state.stravaControlGroup.parentElement !== state.stravaToggleSlot) {
+      state.stravaToggleSlot.replaceChildren(state.stravaControlGroup);
     }
 
     if (state.stravaToggleSlot.parentElement !== document.body) {
@@ -1005,11 +1144,19 @@
     if (state.stravaToggleSlot?.parentNode) {
       state.stravaToggleSlot.parentNode.removeChild(state.stravaToggleSlot);
     }
+    if (state.stravaControlGroup?.parentNode) {
+      state.stravaControlGroup.parentNode.removeChild(state.stravaControlGroup);
+    }
     if (state.stravaToggleButton?.parentNode) {
       state.stravaToggleButton.parentNode.removeChild(state.stravaToggleButton);
     }
+    if (state.stravaRefreshButton?.parentNode) {
+      state.stravaRefreshButton.parentNode.removeChild(state.stravaRefreshButton);
+    }
     state.stravaToggleSlot = null;
+    state.stravaControlGroup = null;
     state.stravaToggleButton = null;
+    state.stravaRefreshButton = null;
     state.lastButtonAnchorSignature = "";
   }
 
@@ -1052,6 +1199,7 @@
     state.canvas = null;
     state.ctx = null;
     state.mountedContainer = null;
+    state.isAreaDirty = false;
     clearLatestDerived();
   }
 
@@ -1345,8 +1493,17 @@
     }
 
     state.lastGeoMode = geo.mode;
+    syncAreaDirtyForGeo(geo);
     drawVectors(state.lastDerivedVectors, geo.project, geo.width, geo.height, geo.clipRect);
     setForecastReadout(state.lastDerivedForecastTimeMs);
+    if (state.fetchController) {
+      setStatus("Refreshing wind data...", "loading");
+      return;
+    }
+    if (state.isAreaDirty) {
+      setStatus("Map moved. Press Refresh to load wind for this area.", "warn");
+      return;
+    }
     applyActiveStatusForGeo(geo);
   }
 
@@ -1364,7 +1521,40 @@
     });
   }
 
-  function scheduleRefresh(immediate = false) {
+  function getAreaKeyFromGeo(geo) {
+    if (!geo?.bounds || typeof geo.mode !== "string") {
+      return "";
+    }
+    return getBoundsKey(geo.bounds, geo.mode);
+  }
+
+  function syncAreaDirtyForGeo(geo) {
+    const previousDirty = state.isAreaDirty;
+    if (!state.settings.enabled) {
+      state.isAreaDirty = false;
+      if (previousDirty !== state.isAreaDirty) {
+        updateStravaToggleButton();
+      }
+      return "";
+    }
+
+    const areaKey = getAreaKeyFromGeo(geo);
+    if (!areaKey) {
+      return "";
+    }
+
+    if (state.lastFetchedCacheKey) {
+      state.isAreaDirty = areaKey !== state.lastFetchedCacheKey;
+    }
+
+    if (previousDirty !== state.isAreaDirty) {
+      updateStravaToggleButton();
+    }
+
+    return areaKey;
+  }
+
+  function refreshViewState(reason = "view-update") {
     if (!isRouteBuilderUrl()) {
       destroyOverlay();
       detachStravaToggleButton();
@@ -1384,15 +1574,96 @@
       clearCanvas();
       setForecastReadout(Number.NaN);
       setStatus("Wind is off. Click the wind icon near Heatmaps and Segments to enable.", "off");
+      state.isAreaDirty = false;
       return;
     }
 
     const geo = getGeoContext();
     if (!geo) {
-      setForecastReadout(Number.NaN);
-      setStatus("Waiting for Strava map viewport...", "loading");
-      clearCanvas();
+      if (!state.fetchController) {
+        setStatus("Waiting for Strava map viewport...", "loading");
+      }
       return;
+    }
+    state.lastGeoMode = geo.mode;
+    syncAreaDirtyForGeo(geo);
+
+    const hasLatestVectors = Boolean(Array.isArray(state.lastDerivedVectors) && state.lastDerivedVectors.length);
+
+    if (hasLatestVectors) {
+      drawVectors(state.lastDerivedVectors, geo.project, geo.width, geo.height, geo.clipRect);
+      setForecastReadout(state.lastDerivedForecastTimeMs);
+    }
+
+    if (state.fetchController) {
+      setStatus("Refreshing wind data...", "loading");
+      return;
+    }
+
+    if (!hasLatestVectors && hasDailyLimitLastError()) {
+      setStatus("Open-Meteo daily limit reached. Please try again tomorrow.", "error");
+      return;
+    }
+
+    if (state.isAreaDirty) {
+      setStatus("Map moved. Press Refresh to load wind for this area.", "warn");
+      return;
+    }
+
+    if (hasLatestVectors) {
+      applyActiveStatusForGeo(geo);
+      return;
+    }
+
+    if (!state.lastFetchedCacheKey) {
+      setStatus("Press Refresh to load wind data for this area.", "idle");
+      debug("No fetched area cache yet in", reason);
+      return;
+    }
+
+    setStatus("Map moved. Press Refresh to load wind for this area.", "warn");
+  }
+
+  function handleViewportChanged(reason = "viewport-change") {
+    debug("Viewport changed", reason);
+    refreshViewState(reason);
+  }
+
+  function requestAreaRefresh(source = "unknown", options = {}) {
+    const {
+      manual = false,
+      allowCache = true,
+      allowNetwork = true,
+      forceNetwork = false,
+      immediate = false
+    } = options;
+
+    if (!isRouteBuilderUrl()) {
+      destroyOverlay();
+      detachStravaToggleButton();
+      return;
+    }
+
+    ensureOverlay();
+    ensureStravaToggleButton();
+    mountOverlayToBestContainer();
+
+    if (!state.settings.enabled) {
+      if (state.fetchController) {
+        state.fetchController.abort();
+        state.fetchController = null;
+        state.activeRequestKey = "";
+      }
+      clearLatestDerived();
+      clearCanvas();
+      setForecastReadout(Number.NaN);
+      setStatus("Wind is off. Click the wind icon near Heatmaps and Segments to enable.", "off");
+      state.isAreaDirty = false;
+      return;
+    }
+
+    if (manual) {
+      state.lastManualRefreshAtMs = Date.now();
     }
 
     if (state.refreshTimerId) {
@@ -1400,15 +1671,23 @@
       state.refreshTimerId = null;
     }
 
+    const run = () => {
+      state.refreshTimerId = null;
+      void refreshOverlay({
+        source,
+        manual,
+        allowCache,
+        allowNetwork,
+        forceNetwork
+      });
+    };
+
     if (immediate) {
-      void refreshOverlay();
+      run();
       return;
     }
 
-    state.refreshTimerId = window.setTimeout(() => {
-      state.refreshTimerId = null;
-      void refreshOverlay();
-    }, CONFIG.refreshDebounceMs);
+    state.refreshTimerId = window.setTimeout(run, CONFIG.refreshDebounceMs);
   }
 
   function getBoundsKey(bounds, mode) {
@@ -1451,6 +1730,11 @@
     const reason = typeof error?.reason === "string" ? error.reason : "";
     const message = typeof error?.message === "string" ? error.message : "";
     return /daily api request limit exceeded/i.test(`${reason} ${message}`);
+  }
+
+  function hasDailyLimitLastError() {
+    const message = typeof state.lastError === "string" ? state.lastError : "";
+    return /daily api request limit exceeded/i.test(message);
   }
 
   function refreshDensityCapIfExpired() {
@@ -1599,7 +1883,15 @@
     throw lastError ?? new Error("Open-Meteo request failed");
   }
 
-  async function refreshOverlay() {
+  async function refreshOverlay(options = {}) {
+    const {
+      source = "unknown",
+      manual = false,
+      allowCache = true,
+      allowNetwork = true,
+      forceNetwork = false
+    } = options;
+
     if (!state.ctx || !state.canvas || !isRouteBuilderUrl()) {
       return;
     }
@@ -1618,6 +1910,7 @@
       clearCanvas();
       setForecastReadout(Number.NaN);
       setStatus("Wind is off. Click the wind icon near Heatmaps and Segments to enable.", "off");
+      state.isAreaDirty = false;
       return;
     }
 
@@ -1634,16 +1927,34 @@
     state.lastGeoMode = geo.mode;
 
     const bounds = geo.bounds;
-    const offsetHours = state.settings.offsetHours;
-    const requestedDensityLevel = state.settings.densityLevel;
-    let effectiveDensityLevel = getEffectiveDensityLevel(requestedDensityLevel);
-
     const cacheKey = getBoundsKey(bounds, geo.mode);
     let cached = state.cache.get(cacheKey);
+    const cachedAgeMs = Number.isFinite(cached?.fetchedAtMs) ? Date.now() - cached.fetchedAtMs : Number.POSITIVE_INFINITY;
+    const manualCacheFresh = cachedAgeMs <= CONFIG.manualRefreshFreshMs;
+    const canUseCache =
+      Boolean(cached) &&
+      Boolean(allowCache) &&
+      !forceNetwork &&
+      (!manual || manualCacheFresh);
 
-    if (!cached) {
+    if (!canUseCache && !allowNetwork) {
+      state.isAreaDirty = true;
+      if (Array.isArray(state.lastDerivedVectors) && state.lastDerivedVectors.length) {
+        const fallbackGeo = getGeoContext() ?? geo;
+        drawVectors(state.lastDerivedVectors, fallbackGeo.project, fallbackGeo.width, fallbackGeo.height, fallbackGeo.clipRect);
+        setForecastReadout(state.lastDerivedForecastTimeMs);
+      } else {
+        clearCanvas();
+        setForecastReadout(Number.NaN);
+      }
+      setStatus("Map moved. Press Refresh to load wind for this area.", "warn");
+      debug("Skipped network refresh", source, { manual, cacheKey });
+      return;
+    }
+
+    if (!canUseCache) {
       if (state.fetchController && state.activeRequestKey === cacheKey) {
-        setStatus("Loading wind data...", "loading");
+        setStatus(manual ? "Refreshing wind data..." : "Loading wind data...", "loading");
         return;
       }
 
@@ -1657,7 +1968,7 @@
       state.activeRequestKey = cacheKey;
       const runId = ++state.refreshNonce;
 
-      setStatus("Loading wind data...", "loading");
+      setStatus(manual ? "Refreshing wind data..." : "Loading wind data...", "loading");
 
       try {
         const fetchGrid = getFetchGridDimensions();
@@ -1669,6 +1980,7 @@
         }
 
         cached = {
+          key: cacheKey,
           mode: geo.mode,
           bounds,
           grid: fetchGrid,
@@ -1683,10 +1995,8 @@
           return;
         }
 
-        const latestRequestedDensity = state.settings.densityLevel;
         if (isRateLimitError(error)) {
-          applyRateLimitDensityCap(latestRequestedDensity);
-          effectiveDensityLevel = getEffectiveDensityLevel(latestRequestedDensity);
+          applyRateLimitDensityCap(state.settings.densityLevel);
         }
 
         const stale = getBestStaleCacheEntry(geo.mode);
@@ -1705,9 +2015,16 @@
           const staleRequestedDensity = state.settings.densityLevel;
           const staleEffectiveDensity = getEffectiveDensityLevel(staleRequestedDensity);
           const staleDerived = deriveVectorsAtOffset(stale, staleOffsetHours, staleEffectiveDensity);
-          rememberLatestDerived(staleDerived.vectors, staleDerived.forecastTimeMs, geo.mode);
-          drawVectors(staleDerived.vectors, geo.project, geo.width, geo.height, geo.clipRect);
+          const staleGeo = getGeoContext() ?? geo;
+          rememberLatestDerived(staleDerived.vectors, staleDerived.forecastTimeMs, staleGeo.mode);
+          drawVectors(staleDerived.vectors, staleGeo.project, staleGeo.width, staleGeo.height, staleGeo.clipRect);
           setForecastReadout(staleDerived.forecastTimeMs);
+          if (stale.key === cacheKey) {
+            state.lastFetchedCacheKey = cacheKey;
+            state.isAreaDirty = false;
+          } else {
+            state.isAreaDirty = true;
+          }
           state.lastError = error?.message ?? String(error);
           return;
         }
@@ -1722,6 +2039,7 @@
             } else {
               setStatus("Rate limited. Keeping last loaded wind.", "warn");
             }
+            state.isAreaDirty = true;
             state.lastError = error?.message ?? String(error);
             return;
           }
@@ -1737,6 +2055,7 @@
           setStatus("Could not load wind data for this map area.", "error");
         }
         debug("wind fetch failed", error);
+        state.isAreaDirty = true;
         state.lastError = error?.message ?? String(error);
         return;
       } finally {
@@ -1752,11 +2071,26 @@
     const finalEffectiveDensity = getEffectiveDensityLevel(finalRequestedDensity);
 
     const derived = deriveVectorsAtOffset(cached, finalOffsetHours, finalEffectiveDensity);
-    rememberLatestDerived(derived.vectors, derived.forecastTimeMs, geo.mode);
-    drawVectors(derived.vectors, geo.project, geo.width, geo.height, geo.clipRect);
+    const drawGeo = getGeoContext() ?? geo;
+    rememberLatestDerived(derived.vectors, derived.forecastTimeMs, drawGeo.mode);
+    drawVectors(derived.vectors, drawGeo.project, drawGeo.width, drawGeo.height, drawGeo.clipRect);
     setForecastReadout(derived.forecastTimeMs);
-    applyActiveStatusForGeo(geo);
+    state.lastFetchedCacheKey = cacheKey;
+    state.isAreaDirty = false;
+
+    const liveAreaKey = getAreaKeyFromGeo(drawGeo);
+    if (liveAreaKey && liveAreaKey !== cacheKey) {
+      state.isAreaDirty = true;
+    }
+
+    if (state.isAreaDirty) {
+      setStatus("Map moved. Press Refresh to load wind for this area.", "warn");
+    } else {
+      applyActiveStatusForGeo(drawGeo);
+    }
+
     state.lastError = null;
+    debug("Area refresh complete", source, { manual, cacheKey });
   }
 
   function deriveVectorsAtOffset(cached, offsetHours, densityLevel) {
@@ -2247,7 +2581,8 @@
     emitUiState();
   }
 
-  function applySettings(partialSettings, source = "unknown") {
+  function applySettings(partialSettings, source = "unknown", options = {}) {
+    const fetchOnEnable = options.fetchOnEnable !== false;
     const previousSettings = state.settings;
     const nextSettings = normalizeSettings({
       ...state.settings,
@@ -2281,13 +2616,32 @@
       clearCanvas();
       setForecastReadout(Number.NaN);
       setStatus("Wind is off. Click the wind icon near Heatmaps and Segments to enable.", "off");
+      state.isAreaDirty = false;
       return;
     }
 
     if (!previousSettings.enabled && nextSettings.enabled) {
+      state.isAreaDirty = false;
       setStatus("Initializing map detection...", "loading");
+      if (fetchOnEnable) {
+        requestAreaRefresh("enable", {
+          manual: false,
+          allowCache: true,
+          allowNetwork: true,
+          immediate: true
+        });
+      } else {
+        refreshViewState("enable-no-auto-fetch");
+      }
+      return;
     }
-    scheduleRefresh(true);
+
+    requestAreaRefresh("settings-change", {
+      manual: false,
+      allowCache: true,
+      allowNetwork: false,
+      immediate: true
+    });
   }
 
   function handleExtensionBridgeMessage(event) {
@@ -2341,7 +2695,9 @@
       const signature = getFallbackSignature();
       if (signature !== state.lastFallbackSignature) {
         state.lastFallbackSignature = signature;
-        scheduleRefresh(true);
+        handleViewportChanged("fallback-signature");
+      } else {
+        refreshViewState("map-discovery");
       }
     } catch (error) {
       rememberError("runMapDiscovery", error);
@@ -2354,7 +2710,6 @@
     state.mapPollId = window.setInterval(() => {
       try {
         runMapDiscovery();
-        scheduleRefresh();
       } catch (error) {
         rememberError("map watcher", error);
       }
@@ -2374,7 +2729,7 @@
         ensureStravaToggleButton();
         ensureOverlay();
         runMapDiscovery();
-        scheduleRefresh(true);
+        handleViewportChanged("url-change");
       } else {
         destroyOverlay();
         detachStravaToggleButton();
@@ -2384,11 +2739,11 @@
 
   function startViewportWatcher() {
     window.addEventListener("hashchange", () => {
-      scheduleRefresh(true);
+      handleViewportChanged("hashchange");
     });
 
     window.addEventListener("resize", () => {
-      scheduleRefresh();
+      handleViewportChanged("window-resize");
     });
   }
 
@@ -2399,6 +2754,7 @@
         hasMap: Boolean(state.map),
         hasOverlay: Boolean(state.overlayRoot),
         hasStravaToggleButton: Boolean(state.stravaToggleButton && state.stravaToggleButton.isConnected),
+        hasStravaRefreshButton: Boolean(state.stravaRefreshButton && state.stravaRefreshButton.isConnected),
         mountedContainer: state.mountedContainer?.className ?? state.mountedContainer?.tagName ?? null,
         hasCanvas: Boolean(state.canvas),
         geoMode: state.lastGeoMode,
@@ -2412,6 +2768,10 @@
         offsetHours: state.settings.offsetHours,
         effectiveDensityLevel: getEffectiveDensityLevel(state.settings.densityLevel),
         densityCapUntilMs: state.densityCapUntilMs,
+        isAreaDirty: state.isAreaDirty,
+        lastFetchedCacheKey: state.lastFetchedCacheKey,
+        lastManualRefreshAtMs: state.lastManualRefreshAtMs,
+        refreshButtonDisabled: Boolean(state.stravaRefreshButton?.disabled),
         statusLevel: state.statusLevel,
         statusText: state.statusText,
         forecastText: state.forecastText,
@@ -2434,7 +2794,7 @@
     ensureStravaToggleButton();
     ensureOverlay();
     setStatus("Wind is off. Click the wind icon near Heatmaps and Segments to enable.", "off");
-    scheduleRefresh(true);
+    refreshViewState("boot");
   }
 
   emitUiState();

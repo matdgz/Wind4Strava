@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Wind for Strava Route Builder",
   "description": "Displays wind direction and intensity on top of the Strava route map.",
-  "version": "0.2.9",
+  "version": "1.0.0",
   "permissions": ["scripting", "tabs", "activeTab", "storage"],
   "icons": {
     "16": "src/assets/icon-16.png",

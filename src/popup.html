@@ -26,7 +26,7 @@
       </header>
 
       <section class="card" id="controls-card">
-        <div class="row-help">Also available via the Wind button near Heatmaps and Segments.</div>
+        <div class="row-help">Use the map buttons near Heatmaps and Segments: Wind toggle + Refresh.</div>
         <p class="note">Default is <strong>OFF</strong> to avoid unnecessary API calls. Configure first, then enable when needed.</p>
         <div class="row row-toggle">
           <div class="row-label">Wind overlay</div>
@@ -54,12 +54,15 @@
         <h2>How to use</h2>
         <ol>
           <li>Open Strava route builder (`/maps/create` or `/routes/new`).</li>
-          <li>Toggle wind ON from popup or from the icon button near Heatmaps and Segments.</li>
+          <li>Toggle wind ON from popup or from the map wind button near Heatmaps and Segments.</li>
+          <li>Move the map freely, then press the map Refresh button to load wind for the new visible area.</li>
           <li>Adjust forecast time and arrow density in this popup.</li>
         </ol>
 
         <h2>Behavior and limitations</h2>
         <ul>
+          <li>Map movement redraws arrows from existing data and does not trigger automatic API calls.</li>
+          <li>Use the map Refresh button for explicit area updates; fresh cache is reused when available.</li>
           <li>Density changes redraw arrows from cached data and do not add extra API calls for the same map area.</li>
           <li>If Open-Meteo rate-limits, Wind4Strava retries and may temporarily use recent cached wind.</li>
           <li>When wind is OFF, no wind API calls are made.</li>
