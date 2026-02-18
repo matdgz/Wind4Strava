@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Wind4Strava</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <header class="popup-header">
+        <div class="header-main">
+          <span class="logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 10.2h9.2c1.7 0 2.8-1 2.8-2.3 0-1.2-1-2.2-2.3-2.2-1 0-1.8.5-2.1 1.3"></path>
+              <path d="M3.6 14h11.1c2 0 3.2 1.1 3.2 2.5 0 1.5-1.2 2.5-2.8 2.5-1.1 0-2-.5-2.4-1.4"></path>
+              <path d="M9.5 8.1l2.3-1.2-1.2-2.2"></path>
+              <path d="M10.5 16.9l2.3 1.2-1.2 2.2"></path>
+            </svg>
+          </span>
+          <div>
+            <h1>Wind4Strava</h1>
+            <p>Control wind overlay for route planning</p>
+          </div>
+        </div>
+      </header>
+
+      <section class="card" id="controls-card">
+        <div class="row-help">Also available via the Wind button near Heatmaps and Segments.</div>
+        <p class="note">Default is <strong>OFF</strong> to avoid unnecessary API calls. Configure first, then enable when needed.</p>
+        <div class="row row-toggle">
+          <div class="row-label">Wind overlay</div>
+          <button id="toggle-button" class="toggle-button" type="button" aria-pressed="false">OFF</button>
+        </div>
+
+        <label class="row slider-row" for="offset-slider">
+          <div class="row-head">
+            <span class="row-label">Forecast time</span>
+            <span id="offset-readout" class="readout">Now</span>
+          </div>
+          <input id="offset-slider" type="range" min="0" max="24" step="2" value="0" />
+        </label>
+
+        <label class="row slider-row" for="density-slider">
+          <div class="row-head">
+            <span class="row-label">Arrow density</span>
+            <span id="density-readout" class="readout">5/10</span>
+          </div>
+          <input id="density-slider" type="range" min="1" max="10" step="1" value="5" />
+        </label>
+      </section>
+
+      <section id="info-panel" class="card info-panel">
+        <h2>How to use</h2>
+        <ol>
+          <li>Open Strava route builder (`/maps/create` or `/routes/new`).</li>
+          <li>Toggle wind ON from popup or from the icon button near Heatmaps and Segments.</li>
+          <li>Adjust forecast time and arrow density in this popup.</li>
+        </ol>
+
+        <h2>Behavior and limitations</h2>
+        <ul>
+          <li>Density changes redraw arrows from cached data and do not add extra API calls for the same map area.</li>
+          <li>If Open-Meteo rate-limits, Wind4Strava retries and may temporarily use recent cached wind.</li>
+          <li>When wind is OFF, no wind API calls are made.</li>
+        </ul>
+
+        <h2>Troubleshooting</h2>
+        <ul>
+          <li>If no overlay appears, keep the Strava route tab active and reload the tab once.</li>
+          <li>If status says waiting for viewport, zoom or move the map a bit.</li>
+          <li>If rate-limited, wait briefly and try again.</li>
+        </ul>
+      </section>
+
+      <p id="route-warning" class="route-warning" hidden>
+        No active Strava route tab found. Open Strava route builder, then reopen this popup.
+      </p>
+    </main>
+
+    <script src="./popup.js"></script>
+  </body>
+</html>

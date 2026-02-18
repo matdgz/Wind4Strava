@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "Wind for Strava Route Builder",
+  "description": "Displays wind direction and intensity on top of the Strava route map.",
+  "version": "0.2.9",
+  "permissions": ["scripting", "tabs", "activeTab", "storage"],
+  "icons": {
+    "16": "src/assets/icon-16.png",
+    "32": "src/assets/icon-32.png",
+    "48": "src/assets/icon-48.png",
+    "128": "src/assets/icon-128.png"
+  },
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "action": {
+    "default_title": "Wind4Strava",
+    "default_icon": {
+      "16": "src/assets/icon-16.png",
+      "32": "src/assets/icon-32.png",
+      "48": "src/assets/icon-48.png",
+      "128": "src/assets/icon-128.png"
+    },
+    "default_popup": "src/popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://strava.com/*", "https://*.strava.com/*"],
+      "js": ["src/injector.js"],
+      "css": ["src/styles.css"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/page-script.js"],
+      "matches": ["https://strava.com/*", "https://*.strava.com/*"]
+    }
+  ],
+  "host_permissions": ["https://strava.com/*", "https://*.strava.com/*", "https://api.open-meteo.com/*"],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "wind4strava@matthiasdominguez.dev",
+      "strict_min_version": "121.0"
+    }
+  }
+}

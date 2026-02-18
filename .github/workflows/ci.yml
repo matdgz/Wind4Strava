@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate manifest.json
+        run: python -m json.tool manifest.json > /dev/null
+
+      - name: Validate VERSION format
+        run: grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' VERSION
+
+      - name: Build release artifacts (dry run)
+        run: ./scripts/build_release_artifacts.sh "$(cat VERSION)"
+
+      - name: Validate release notes extraction
+        run: ./scripts/extract_release_notes.sh "$(cat VERSION)" > /tmp/release-notes.md
