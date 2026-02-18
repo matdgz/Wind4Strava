@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Wind for Strava Route Builder",
   "description": "Displays wind direction and intensity on top of the Strava route map.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "permissions": ["scripting", "tabs", "activeTab", "storage"],
   "icons": {
     "16": "src/assets/icon-16.png",
@@ -11,7 +11,8 @@
     "128": "src/assets/icon-128.png"
   },
   "background": {
-    "service_worker": "src/background.js"
+    "service_worker": "src/background.js",
+    "scripts": ["src/background.js"]
   },
   "action": {
     "default_title": "Wind4Strava",

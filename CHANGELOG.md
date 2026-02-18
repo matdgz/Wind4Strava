@@ -6,6 +6,13 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-02-18
+
+### Fixed
+
+- Firefox compatibility fix for MV3 background registration by adding `background.scripts` alongside `background.service_worker`.
+- Prevented `background.service_worker is currently disabled. Add background.scripts.` protocol error on Firefox loading.
+
 ## [1.0.0] - 2026-02-18
 
 ### Added
